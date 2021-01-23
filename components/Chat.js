@@ -1,7 +1,10 @@
 import React, { Component } from 'react';
 import { View, Platform, KeyboardAvoidingView } from 'react-native';
-import { Bubble, GiftedChat } from 'react-native-gifted-chat';
+import { Bubble, GiftedChat, InputToolbar } from 'react-native-gifted-chat';
 import '@firebase/auth';
+import AsyncStorage from '@react-native-community/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+
 
 const firebase = require('firebase');
 require('firebase/firestore');
@@ -17,7 +20,8 @@ export default class Chat extends Component {
 				name: '',
         avatar: '',
         createdAt: ''
-			}
+			},
+			isConnected: false
 		}
 
 
@@ -39,37 +43,90 @@ export default class Chat extends Component {
 		const name = this.props.route.params.name; // sent over from the start screen
 		this.props.navigation.setOptions({ title: name }); // Sets the title of the chat page to be the name of the user.
 
-		this.referenceChatMessages = firebase.firestore().collection("messages");
-		// this.unsubscribe = this.referenceChatMessages.onSnapshot(this.onCollectionUpdate);
+		// IF statement checks to see if the user is online. If they are, pull messages from firestore, if not, pull messages from local storage (AsyncStorage)
+		NetInfo.fetch().then(connection => {
+			if (connection.isConnected) {
+				console.log('online');
+				this.setState({
+					isConnected: true
+				});
 
-		this.authUnsubscribe = firebase.auth().onAuthStateChanged((user) => {
-			if (!user) {
-				firebase.auth().signInAnonymously();
+				this.referenceChatMessages = firebase.firestore().collection("messages");
+				// this.unsubscribe = this.referenceChatMessages.onSnapshot(this.onCollectionUpdate); // This line is no longer needed after we created the authorization logic
+		
+				this.authUnsubscribe = firebase.auth().onAuthStateChanged((user) => {
+					if (!user) {
+						firebase.auth().signInAnonymously();
+					}
+		
+					this.setState({
+						user: {
+							_id: user.uid,
+							name: name,
+							avatar: "https://placeimg.com/140/140/any",
+							createdAt: new Date()
+						},
+						messages: [],
+					});
+		
+					this.unsubscribe = this.referenceChatMessages
+						.orderBy("createdAt", "desc")
+						.onSnapshot(this.onCollectionUpdate);
+		
+				});
+			} else {
+				console.log('offline');
+				this.setState({
+					isConnected: false
+				});
+				this.getMessages();
+				window.alert('You are offline and won\'t be able to send messages until you are online');
 			}
-
-			this.setState({
-				user: {
-					_id: user.uid,
-					name: name,
-					avatar: "https://placeimg.com/140/140/any",
-					createdAt: new Date()
-				},
-				messages: [],
-			});
-
-			this.unsubscribe = this.referenceChatMessages
-				.orderBy("createdAt", "desc")
-				.onSnapshot(this.onCollectionUpdate);
-
 		});
 
 	}
 
+	// Gets the messages from local storage so that they can be viewed when offline
+	async getMessages() {
+		let messages = '';
+		try {
+			messages = await AsyncStorage.getItem('messages') || [];
+			this.setState({
+				messages: JSON.parse(messages)
+			});
+		} catch (error) {
+			console.log(error.message);
+		}
+	};
+
+	// Saves the chats messages in local storage each time a new message gets sent
+	async saveMessages() {
+		try {
+			await AsyncStorage.setItem('messages', JSON.stringify(this.state.messages));
+		} catch (error) {
+			console.log(error.message);
+		}
+	}
+
+	// This isn't called anywhere in the code. It's simply here if I want to use it during development
+	async deleteMessages() {
+		try {
+			await AsyncStorage.removeItem('messages');
+			this.setState({
+				messages: []
+			})
+		} catch (error) {
+			console.log(error.message);
+		}
+	}
+
+	// This unsubscribes from firestore and authorization when the component unmounts, forcing the app to stop listening for updates to the store
 	componentWillUnmount(){
 		this.unsubscribe();
 		this.authUnsubscribe();
 	}
 
+	// Updates this.state.messages after a new instance of a chat message hits the firestore
 	onCollectionUpdate = (querySnapshot) => {
     const messages = [];
     // go through each document
@@ -100,10 +157,12 @@ export default class Chat extends Component {
       messages: GiftedChat.append(previousState.messages, messages),
     }),
     () => {
-      this.addMessage();
+			this.addMessage();
+			this.saveMessages();
     });
   }
 
+	// Creates a new instance of a chat message in the firestore
 	addMessage() {
     const message = this.state.messages[0];
     this.referenceChatMessages.add({
@@ -114,6 +173,7 @@ export default class Chat extends Component {
     });
   }
 
+	// This method comes with GiftedChat to render the chat bubble props
 	renderBubble(props) {
 		return (
 			<Bubble
@@ -127,6 +187,17 @@ export default class Chat extends Component {
 		)
 	}
 
+	// Only render the input toolbar if the user is online
+	renderInputToolbar(props) {
+		if(this.state.isConnected == false) {
+			// This is intentionally left blank
+		} else {
+			return (
+				<InputToolbar {...props}/>
+			);
+		}
+	}
+
 	render() {
 		// passed this from the "start" screen
 		let color = this.props.route.params.color;
@@ -136,6 +207,7 @@ export default class Chat extends Component {
 
 				<GiftedChat
 					renderBubble={this.renderBubble.bind(this)}
+					renderInputToolbar={this.renderInputToolbar.bind(this)}
 					messages={this.state.messages}
 					onSend={messages => this.onSend(messages)}
 					user={this.state.user}
