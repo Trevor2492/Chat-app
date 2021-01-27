@@ -4,6 +4,8 @@ import { Bubble, GiftedChat, InputToolbar } from 'react-native-gifted-chat';
 import '@firebase/auth';
 import AsyncStorage from '@react-native-community/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import CustomActions from './CustomActions';
+import MapView from 'react-native-maps';
 
 
 const firebase = require('firebase');
@@ -141,7 +143,9 @@ export default class Chat extends Component {
           _id: data.user._id,
           name: data.user.name,
           avatar: data.user.avatar,
-        }
+				},
+				image: data.image || null,
+				location: data.location || null,
       });
     });
     this.setState({
@@ -167,10 +171,13 @@ export default class Chat extends Component {
     const message = this.state.messages[0];
     this.referenceChatMessages.add({
       _id: message._id,
-      text: message.text,
+      text: message.text || '',
       createdAt: message.createdAt,
-      user: message.user,
-    });
+			user: message.user,
+			image: message.image || null,
+			location: message.location || null,
+		});
+		console.log('Message added to firestore');
   }
 
 	// This method comes with GiftedChat to render the chat bubble props
@@ -198,6 +205,34 @@ export default class Chat extends Component {
 		}
 	}
 
+	//Renders the '+' in the input toolbar
+	renderCustomActions = (props) => {
+		return <CustomActions {...props} />;
+	};
+
+	renderCustomView (props) {
+		const { currentMessage } = props;
+		if (currentMessage.location){
+			return (
+				<MapView 
+					style={{
+						width: 250,
+						height: 200,
+						borderRadius: 13,
+						margin: 3
+					}}
+					region={{
+						latitude: currentMessage.location.latitude,
+						longitude: currentMessage.location.longitude,
+						latitudeDelta: 0.0922,
+						longitudeDelta: 0.0421
+					}}
+				/>
+			);
+		}
+		return null;
+	}
+
 	render() {
 		// passed this from the "start" screen
 		let color = this.props.route.params.color;
@@ -208,6 +243,8 @@ export default class Chat extends Component {
 				<GiftedChat
 					renderBubble={this.renderBubble.bind(this)}
 					renderInputToolbar={this.renderInputToolbar.bind(this)}
+					renderActions={this.renderCustomActions}
+					renderCustomView={this.renderCustomView}
 					messages={this.state.messages}
 					onSend={messages => this.onSend(messages)}
 					user={this.state.user}
