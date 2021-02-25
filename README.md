@@ -27,4 +27,4 @@ Follow instructions in the tab that will open in your browser.
 
 ##
 
-![](5.5 Final Chat App recording.gif)
+![chat app gif](https://github.com/Trevor2492/Chat-app/blob/master/5.5%20Final%20Chat%20App%20recording.gif)
